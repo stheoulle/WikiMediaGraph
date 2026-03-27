@@ -477,9 +477,11 @@ These metrics provide concrete support for architecture choices.
 - Implementation path: cours/wikimedia-m1
 - Includes: `page_recent_activity` table, 60-second recomputation worker, and FastAPI endpoints (`/api/health`, `/api/metrics`, `/api/recent/pages`, `/api/pages/{title}/activity`)
 
-1. Milestone 3 - Link storage and graph endpoint
+1. Milestone 3 - Link storage and graph endpoint (implemented)
 
 - page_links table, resolver logic, one-hop API
+- Implementation path: cours/wikimedia-m1
+- Includes: `page_links` FK table, Wikipedia API link resolver with TTL, graph APIs (`POST /api/pages/{title}/links/refresh`, `GET /api/graph?page_title=...`)
 
 1. Milestone 4 - Frontend interaction
 

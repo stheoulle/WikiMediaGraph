@@ -10,6 +10,9 @@ class Settings:
     kafka_group_id: str
     sse_url: str
     sse_user_agent: str
+    wiki_api_url: str
+    link_ttl_minutes: int
+    wiki_http_timeout_seconds: int
     log_level: str
 
 
@@ -25,5 +28,8 @@ def load_settings() -> Settings:
             "SSE_USER_AGENT",
             "WikiMediaMilestone1/0.1 (course project) requests",
         ),
+        wiki_api_url=os.getenv("WIKI_API_URL", "https://en.wikipedia.org/w/api.php"),
+        link_ttl_minutes=int(os.getenv("LINK_TTL_MINUTES", "60")),
+        wiki_http_timeout_seconds=int(os.getenv("WIKI_HTTP_TIMEOUT_SECONDS", "20")),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )
