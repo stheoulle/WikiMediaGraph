@@ -471,9 +471,11 @@ These metrics provide concrete support for architecture choices.
 - Implementation path: cours/wikimedia-m1
 - Includes: Docker Compose stack, PostgreSQL schema, SSE producer, idempotent Kafka consumer
 
-1. Milestone 2 - Recent activity
+1. Milestone 2 - Recent activity (implemented)
 
 - last-hour read model and API exposure
+- Implementation path: cours/wikimedia-m1
+- Includes: `page_recent_activity` table, 60-second recomputation worker, and FastAPI endpoints (`/api/health`, `/api/metrics`, `/api/recent/pages`, `/api/pages/{title}/activity`)
 
 1. Milestone 3 - Link storage and graph endpoint
 
