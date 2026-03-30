@@ -510,4 +510,4 @@ These metrics provide concrete support for architecture choices.
 - Last-hour activity is visible and correct
 - Linked pages are stored with foreign keys
 - Graph UI supports center + neighbors and recenter interaction
-- README, and metrics are sufficient to defend architectural choices
+- README, tests, and metrics are sufficient to defend architectural choices
