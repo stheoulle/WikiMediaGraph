@@ -257,6 +257,7 @@ Response shape:
 
 - GET /api/health
 - GET /api/metrics (consumer lag, processing rate, dedup hit rate)
+- GET /api/observability (aggregated milestone-5 observability payload)
 
 ---
 
@@ -403,6 +404,14 @@ Track and present:
 - Graph API p50/p95 latency
 - DB query plans for adjacency endpoint
 
+Milestone 5 implementation exposes these through `GET /api/observability` with:
+
+- stream throughput snapshots (`events_last_5m`, `events_per_second_last_5m`)
+- lag proxies (`latest_event_time`, `estimated_consumer_lag_seconds`, per-minute activity series)
+- idempotency consistency check (`dedup_consistency_gap`)
+- graph/link freshness and adjacency query latency
+- API latency stats (`p50`/`p95`/`max`) for key endpoints
+
 These metrics provide concrete support for architecture choices.
 
 ---
@@ -484,13 +493,13 @@ These metrics provide concrete support for architecture choices.
 - Implementation path: cours/wikimedia-m1
 - Includes: `page_links` FK table, Wikipedia API link resolver with TTL, graph APIs (`POST /api/pages/{title}/links/refresh`, `GET /api/graph?page_title=...`)
 
-1. Milestone 4 - Frontend interaction
+1. Milestone 4 - Frontend interaction (implemented)
 
 - center node render, color/size rules, recenter-on-click
 
-1. Milestone 5 - Hardening and defense
+1. Milestone 5 - Hardening and defense (implemented)
 
-- tests, observability metrics, architecture trade-off evidence
+- Observability metrics route: `GET /api/observability`
 
 ---
 
@@ -501,4 +510,4 @@ These metrics provide concrete support for architecture choices.
 - Last-hour activity is visible and correct
 - Linked pages are stored with foreign keys
 - Graph UI supports center + neighbors and recenter interaction
-- README, tests, and metrics are sufficient to defend architectural choices
+- README, and metrics are sufficient to defend architectural choices

@@ -1,8 +1,12 @@
 from datetime import datetime, timedelta, timezone
+from collections import defaultdict, deque
+import math
 from pathlib import Path
+from threading import Lock
+import time
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -15,11 +19,58 @@ from app.common.link_resolver import (
     refresh_links_for_page,
 )
 
-app = FastAPI(title="WikiMedia Milestone 4 API", version="0.3.0")
+app = FastAPI(title="WikiMedia Milestone 5 API", version="0.4.0")
 settings = load_settings()
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+_LATENCY_MAX_SAMPLES = 4000
+_REQUEST_LATENCIES_MS: dict[str, deque[float]] = defaultdict(lambda: deque(maxlen=_LATENCY_MAX_SAMPLES))
+_LATENCY_LOCK = Lock()
 
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+def _percentile(values: list[float], p: float) -> float | None:
+    if not values:
+        return None
+    sorted_values = sorted(values)
+    rank = max(1, math.ceil((p / 100.0) * len(sorted_values)))
+    return sorted_values[rank - 1]
+
+
+def _latency_snapshot(path: str) -> dict[str, Any]:
+    with _LATENCY_LOCK:
+        values = list(_REQUEST_LATENCIES_MS[path])
+
+    if not values:
+        return {
+            "count": 0,
+            "avg_ms": None,
+            "p50_ms": None,
+            "p95_ms": None,
+            "max_ms": None,
+        }
+
+    return {
+        "count": len(values),
+        "avg_ms": round(sum(values) / len(values), 2),
+        "p50_ms": round(_percentile(values, 50) or 0.0, 2),
+        "p95_ms": round(_percentile(values, 95) or 0.0, 2),
+        "max_ms": round(max(values), 2),
+    }
+
+
+@app.middleware("http")
+async def collect_api_latency(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+
+    path = request.url.path
+    if path.startswith("/api/"):
+        with _LATENCY_LOCK:
+            _REQUEST_LATENCIES_MS[path].append(elapsed_ms)
+
+    return response
 
 
 def _link_config() -> LinkResolverConfig:
@@ -62,6 +113,141 @@ def metrics() -> dict[str, Any]:
         "active_pages_last_hour": active_pages_last_hour,
         "window_start": window_start.isoformat(),
         "window_end": now_utc.isoformat(),
+    }
+
+
+@app.get("/api/observability")
+def observability() -> dict[str, Any]:
+    now_utc = datetime.now(timezone.utc)
+    window_1h = now_utc - timedelta(hours=1)
+    window_5m = now_utc - timedelta(minutes=5)
+    window_10m = now_utc - timedelta(minutes=10)
+
+    graph_query_latency_ms: float | None = None
+
+    with db_connection(settings.database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM pages")
+            total_pages = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM edit_events")
+            total_edit_events = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM edit_events WHERE event_time >= %s", (window_1h,))
+            events_last_hour = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM edit_events WHERE event_time >= %s", (window_5m,))
+            events_last_5m = cur.fetchone()[0]
+
+            cur.execute("SELECT COALESCE(SUM(total_edits), 0) FROM page_stats")
+            total_counted_edits = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM page_recent_activity WHERE edits_last_hour > 0")
+            active_pages_last_hour = cur.fetchone()[0]
+
+            cur.execute("SELECT COALESCE(SUM(edits_last_hour), 0) FROM page_recent_activity")
+            edits_last_hour_materialized = cur.fetchone()[0]
+
+            cur.execute("SELECT MAX(event_time) FROM edit_events")
+            newest_event_time = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM page_links")
+            total_links = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM page_links WHERE freshness_expires_at <= NOW()")
+            stale_links = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                SELECT date_trunc('minute', event_time) AS minute_bucket, COUNT(*)
+                FROM edit_events
+                WHERE event_time >= %s
+                GROUP BY minute_bucket
+                ORDER BY minute_bucket ASC
+                """,
+                (window_10m,),
+            )
+            lag_series_rows = cur.fetchall()
+
+            # Lightweight adjacency query timing as a proxy for graph-read database cost.
+            cur.execute(
+                """
+                SELECT source_page_id
+                FROM page_links
+                GROUP BY source_page_id
+                ORDER BY COUNT(*) DESC
+                LIMIT 1
+                """
+            )
+            top_source = cur.fetchone()
+
+            if top_source is not None:
+                start_query = time.perf_counter()
+                cur.execute(
+                    """
+                    SELECT l.target_page_id
+                    FROM page_links l
+                    JOIN pages t ON t.id = l.target_page_id
+                    LEFT JOIN page_stats ts ON ts.page_id = t.id
+                    LEFT JOIN page_recent_activity tra ON tra.page_id = t.id
+                    WHERE l.source_page_id = %s
+                    ORDER BY tra.edits_last_hour DESC, ts.total_edits DESC, t.title ASC
+                    LIMIT 25
+                    """,
+                    (top_source[0],),
+                )
+                cur.fetchall()
+                graph_query_latency_ms = (time.perf_counter() - start_query) * 1000.0
+
+    dedup_consistency_gap = total_edit_events - total_counted_edits
+    lag_seconds = None
+    if newest_event_time is not None:
+        lag_seconds = max(0.0, (now_utc - newest_event_time).total_seconds())
+
+    return {
+        "timestamp_utc": now_utc.isoformat(),
+        "windows": {
+            "one_hour_start": window_1h.isoformat(),
+            "five_min_start": window_5m.isoformat(),
+            "ten_min_start": window_10m.isoformat(),
+            "window_end": now_utc.isoformat(),
+        },
+        "stream_activity": {
+            "total_pages": total_pages,
+            "total_edit_events": total_edit_events,
+            "events_last_hour": events_last_hour,
+            "events_last_5m": events_last_5m,
+            "events_per_second_last_5m": round(events_last_5m / 300.0, 3),
+            "active_pages_last_hour": active_pages_last_hour,
+            "materialized_edits_last_hour": edits_last_hour_materialized,
+            "latest_event_time": newest_event_time.isoformat() if newest_event_time else None,
+            "estimated_consumer_lag_seconds": round(lag_seconds, 3) if lag_seconds is not None else None,
+            "lag_series_last_10m": [
+                {
+                    "minute": r[0].isoformat(),
+                    "events": r[1],
+                }
+                for r in lag_series_rows
+            ],
+        },
+        "dedup_and_consistency": {
+            "total_counted_edits": total_counted_edits,
+            "dedup_consistency_gap": dedup_consistency_gap,
+            "dedup_consistency_ok": dedup_consistency_gap == 0,
+            "note": "Gap should remain zero under idempotent processing.",
+        },
+        "graph_and_links": {
+            "total_links": total_links,
+            "stale_links": stale_links,
+            "fresh_links": max(0, total_links - stale_links),
+            "stale_link_ratio": round((stale_links / total_links), 4) if total_links > 0 else 0.0,
+            "adjacency_query_latency_ms": round(graph_query_latency_ms, 3) if graph_query_latency_ms is not None else None,
+        },
+        "api_latency_ms": {
+            "graph": _latency_snapshot("/api/graph"),
+            "metrics": _latency_snapshot("/api/metrics"),
+            "observability": _latency_snapshot("/api/observability"),
+        },
     }
 
 

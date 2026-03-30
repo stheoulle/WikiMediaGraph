@@ -26,6 +26,11 @@ This folder now also implements Milestone 4:
 - Node color and size mapping from activity metrics
 - Click-to-recenter behavior on adjacent nodes
 
+This folder now also implements Milestone 5:
+
+- Unified observability endpoint (`GET /api/observability`)
+- Throughput, lag proxy, dedup consistency, link freshness, and API latency metrics
+
 ## Stack
 
 - Python 3.11
@@ -148,6 +153,7 @@ docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT COU
 ```bash
 curl -s http://localhost:8000/api/health
 curl -s http://localhost:8000/api/metrics
+curl -s http://localhost:8000/api/observability
 curl -s "http://localhost:8000/api/recent/pages?limit=10"
 curl -s -X POST "http://localhost:8000/api/pages/France/links/refresh"
 curl -s "http://localhost:8000/api/graph?page_title=France&refresh=true&limit=25"
@@ -237,6 +243,21 @@ docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT sou
 	- red: `has_recent_modifications = false`
 - Node size uses logarithmic scaling from `total_edits`.
 - Click any neighbor node to re-center and fetch a new one-hop graph.
+
+## Milestone 5 behavior
+
+- `GET /api/observability` returns one aggregated payload for defense metrics.
+- Includes stream activity:
+	- total counts (`total_pages`, `total_edit_events`)
+	- rates (`events_last_5m`, `events_per_second_last_5m`)
+	- lag proxy (`latest_event_time`, `estimated_consumer_lag_seconds`, `lag_series_last_10m`)
+- Includes dedup/consistency signal:
+	- `total_counted_edits`
+	- `dedup_consistency_gap` (expected `0`)
+- Includes graph/link quality:
+	- `total_links`, `stale_links`, `stale_link_ratio`
+	- `adjacency_query_latency_ms`
+- Includes API latency snapshots (`avg_ms`, `p50_ms`, `p95_ms`, `max_ms`) for key routes.
 
 ## Optional: full Docker app mode
 
