@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WikiMedia Graph Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="background-glow glow-one"></div>
+    <div class="background-glow glow-two"></div>
+
+    <main class="layout">
+      <header class="topbar">
+        <div class="title-group">
+          <p class="eyebrow">Milestone 4</p>
+          <h1>WikiMedia Real-Time Graph</h1>
+          <p class="subtitle">Explore one-hop page neighborhoods and re-center by clicking adjacent nodes.</p>
+        </div>
+        <form id="controls" class="controls" autocomplete="off">
+          <label class="field">
+            <span>Page Title</span>
+            <input id="pageTitleInput" name="pageTitle" type="text" value="France" required />
+          </label>
+          <label class="field compact">
+            <span>Limit</span>
+            <input id="limitInput" name="limit" type="number" min="1" max="300" value="25" required />
+          </label>
+          <label class="toggle">
+            <input id="refreshInput" name="refresh" type="checkbox" />
+            <span>Force link refresh</span>
+          </label>
+          <button type="submit">Load Graph</button>
+        </form>
+      </header>
+
+      <section class="content-grid">
+        <article class="panel graph-panel">
+          <div class="panel-head">
+            <h2>Graph View</h2>
+            <p id="graphStatus">Waiting for first query...</p>
+          </div>
+          <svg id="graphCanvas" viewBox="0 0 1000 700" aria-label="Graph canvas"></svg>
+        </article>
+
+        <aside class="panel metrics-panel">
+          <h2>Center Metrics</h2>
+          <dl id="centerMetrics" class="metrics"></dl>
+          <h3>Neighbors</h3>
+          <ul id="neighborList" class="neighbor-list"></ul>
+          <p class="legend-title">Legend</p>
+          <div class="legend">
+            <div><span class="swatch recent"></span> Recent activity (last hour)</div>
+            <div><span class="swatch stale"></span> No recent activity</div>
+            <div><span class="swatch center"></span> Center page</div>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

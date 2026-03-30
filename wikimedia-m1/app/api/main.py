@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.common.config import load_settings
 from app.common.db import db_connection
@@ -12,8 +15,11 @@ from app.common.link_resolver import (
     refresh_links_for_page,
 )
 
-app = FastAPI(title="WikiMedia Milestone 3 API", version="0.2.0")
+app = FastAPI(title="WikiMedia Milestone 4 API", version="0.3.0")
 settings = load_settings()
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 
 def _link_config() -> LinkResolverConfig:
@@ -22,6 +28,11 @@ def _link_config() -> LinkResolverConfig:
         link_ttl_minutes=settings.link_ttl_minutes,
         request_timeout_seconds=settings.wiki_http_timeout_seconds,
     )
+
+
+@app.get("/")
+def graph_ui() -> FileResponse:
+    return FileResponse(_STATIC_DIR / "index.html")
 
 
 @app.get("/api/health")

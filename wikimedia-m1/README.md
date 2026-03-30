@@ -19,6 +19,13 @@ This folder now also implements Milestone 3:
 - On-demand resolver against Wikipedia API with TTL cache refresh
 - One-hop graph endpoint (`/api/graph`) for center page + neighbors
 
+This folder now also implements Milestone 4:
+
+- Browser graph explorer served by FastAPI at `/`
+- Center node visualization with one-hop neighbors in an SVG graph
+- Node color and size mapping from activity metrics
+- Click-to-recenter behavior on adjacent nodes
+
 ## Stack
 
 - Python 3.11
@@ -49,6 +56,7 @@ Default runtime mode in this repository:
 - app/recent_activity/main.py: rolling recomputation worker for last-hour activity
 - app/api/main.py: FastAPI endpoints for milestone 2 exposure
 - app/common/link_resolver.py: Wikipedia link resolver and DB link refresh logic
+- app/api/static/: Milestone 4 frontend (`index.html`, `styles.css`, `app.js`)
 - requirements.txt: Python dependencies
 - .env.example: environment values for full Docker app mode
 - .env.host.example: environment values for host app mode
@@ -121,7 +129,13 @@ set -a; source .env.host.example; export PYTHONPATH=$PWD; set +a
 python -m uvicorn app.api.main:app --host 0.0.0.0 --port 8000
 ```
 
-6. Verify data is flowing:
+6. Open Milestone 4 frontend:
+
+```bash
+xdg-open http://localhost:8000/
+```
+
+7. Verify data is flowing:
 
 ```bash
 docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT COUNT(*) FROM edit_events;"
@@ -129,7 +143,7 @@ docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT p.t
 docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT COUNT(*) FROM page_recent_activity WHERE edits_last_hour > 0;"
 ```
 
-7. Verify API exposure:
+8. Verify API exposure:
 
 ```bash
 curl -s http://localhost:8000/api/health
@@ -213,6 +227,16 @@ curl -s "http://localhost:8000/api/graph?page_title=${ENCODED_TITLE}&refresh=fal
 docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT COUNT(*) FROM page_links;"
 docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT source_page_id, target_page_id, relation_type, freshness_expires_at FROM page_links ORDER BY discovered_at DESC LIMIT 10;"
 ```
+
+## Milestone 4 behavior
+
+- Visit `http://localhost:8000/` to open the graph explorer.
+- Enter a page title and click **Load Graph** to render center + neighbors.
+- Nodes are colored:
+	- green: `has_recent_modifications = true`
+	- red: `has_recent_modifications = false`
+- Node size uses logarithmic scaling from `total_edits`.
+- Click any neighbor node to re-center and fetch a new one-hop graph.
 
 ## Optional: full Docker app mode
 
