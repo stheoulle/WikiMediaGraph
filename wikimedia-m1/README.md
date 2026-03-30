@@ -139,6 +139,22 @@ curl -s -X POST "http://localhost:8000/api/pages/France/links/refresh"
 curl -s "http://localhost:8000/api/graph?page_title=France&refresh=true&limit=25"
 ```
 
+The following shold both be zero whn checking for wrongly injested events
+
+# Check for non-Wikipedia projects
+```bash
+docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c \
+"SELECT raw_payload->>'wiki' AS wiki, COUNT(*) FROM edit_events 
+ WHERE raw_payload->>'wiki' NOT LIKE '%wiki' 
+ GROUP BY raw_payload->>'wiki';"
+ ```
+
+# Check for File/Image pages
+```bash
+docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c \
+"SELECT COUNT(*) FROM pages WHERE title ILIKE 'File:%' OR title ILIKE 'Image:%';"
+```
+
 ## Milestone 3 behavior
 
 - `POST /api/pages/{title}/links/refresh`: fetches related links/redirects from Wikipedia API and stores rows in `page_links`.
@@ -165,7 +181,7 @@ docker exec -i wikimedia-postgres psql -U wikimedia -d wikimedia < sql/migration
 2. Force a link refresh for a Wikipedia page:
 
 ```bash
-TITLE="France"
+TITLE="Category:Taxa named by Harrison Gray Dyar Jr."
 ENCODED_TITLE=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$TITLE")
 curl -s -X POST "http://localhost:8000/api/pages/${ENCODED_TITLE}/links/refresh"
 ```

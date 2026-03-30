@@ -18,21 +18,21 @@ def run_forever(interval_seconds: int = 60) -> None:
 
     logger.info("Recent activity worker started (interval=%ss)", interval_seconds)
 
-    with db_connection(settings.database_url) as conn:
-        while True:
-            try:
+    while True:
+        try:
+            with db_connection(settings.database_url) as conn:
                 updated = recompute_recent_activity(conn)
                 logger.info("Recent activity recomputed: rows updated=%s", updated)
-                time.sleep(interval_seconds)
-            except KeyboardInterrupt:
-                logger.info("Recent activity worker interrupted")
-                break
-            except psycopg.Error as exc:
-                logger.error("Database error in recent activity worker: %s", exc)
-                time.sleep(3)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Unexpected recent activity error: %s", exc)
-                time.sleep(3)
+            time.sleep(interval_seconds)
+        except KeyboardInterrupt:
+            logger.info("Recent activity worker interrupted")
+            break
+        except psycopg.Error as exc:
+            logger.error("Database error in recent activity worker: %s", exc)
+            time.sleep(3)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Unexpected recent activity error: %s", exc)
+            time.sleep(3)
 
 
 if __name__ == "__main__":
