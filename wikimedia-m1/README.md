@@ -2,7 +2,7 @@
 
 This folder implements Milestone 1 from the course README:
 
-- SSE ingest from Wikimedia recent changes
+- SSE ingest from Wikimedia recent changes (Wikipedia pages only)
 - Kafka topic edits.raw
 - Consumer with idempotent processing
 - PostgreSQL tables: pages, edit_events, page_stats
@@ -25,6 +25,13 @@ This folder now also implements Milestone 3:
 - Redpanda (Kafka API)
 - PostgreSQL 16
 - Docker Compose
+
+## Ingestion Scope
+
+The producer consumes the Wikimedia `recentchange` stream but only keeps Wikipedia page changes.
+
+- Included: Wikipedia page edit events.
+- Excluded: non-Wikipedia projects and media/file-oriented changes (for example Wikimedia Commons image pages).
 
 Default runtime mode in this repository:
 
@@ -155,10 +162,10 @@ Run these commands to use Milestone 3 directly.
 docker exec -i wikimedia-postgres psql -U wikimedia -d wikimedia < sql/migrations/003_page_links.sql
 ```
 
-2. Force a link refresh for a page:
+2. Force a link refresh for a Wikipedia page:
 
 ```bash
-TITLE="Category:United States Fish and Wildlife Service images (review needed)"
+TITLE="France"
 ENCODED_TITLE=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$TITLE")
 curl -s -X POST "http://localhost:8000/api/pages/${ENCODED_TITLE}/links/refresh"
 ```

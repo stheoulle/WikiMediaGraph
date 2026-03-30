@@ -42,7 +42,7 @@ The central user interaction is:
 
 ## Included in MVP
 
-- Kafka ingestion from Wikimedia SSE
+- Kafka ingestion from Wikimedia SSE (filtered to Wikipedia page changes only)
 - Total edit counters per page
 - Last-hour edit activity per page
 - Linked-page extraction and relational storage with foreign keys
@@ -65,6 +65,7 @@ These are reserved as post-MVP improvements.
 1. SSE Ingestor
 
 - Connects to Wikimedia SSE endpoint
+- Keeps only Wikipedia page change events (excludes non-Wikipedia/media-oriented changes)
 - Parses events and publishes normalized messages to Kafka topic edits.raw
 
 1. Kafka
