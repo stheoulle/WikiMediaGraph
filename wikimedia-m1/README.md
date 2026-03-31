@@ -22,9 +22,10 @@ This folder now also implements Milestone 3:
 This folder now also implements Milestone 4:
 
 - Browser graph explorer served by FastAPI at `/`
-- Center node visualization with one-hop neighbors in an SVG graph
+- Persistent explored graph visualization in an SVG map
 - Node color and size mapping from activity metrics
-- Click-to-recenter behavior on adjacent nodes
+- Click-to-recenter behavior that keeps previously explored nodes visible
+- Pan and zoom controls for traveling across discovered pages
 
 This folder now also implements Milestone 5:
 
@@ -144,7 +145,7 @@ xdg-open http://localhost:8000/
 
 ```bash
 docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT COUNT(*) FROM edit_events;"
-docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT p.title, s.total_edits, s.last_edit_time FROM page_stats s JOIN pages p ON p.id = s.page_id ORDER BY s.total_edits DESC LIMIT 10;"
+docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT p.title, s.total_edits, s.last_edit_time FROM page_stats s JOIN pages p ON p.id = s.page_id ORDER BY s.last_edit_time DESC LIMIT 10;"
 docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT COUNT(*) FROM page_recent_activity WHERE edits_last_hour > 0;"
 ```
 
@@ -238,11 +239,13 @@ docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT sou
 
 - Visit `http://localhost:8000/` to open the graph explorer.
 - Enter a page title and click **Load Graph** to render center + neighbors.
+- Each re-center keeps prior nodes and edges on screen to build one continuous explored graph.
 - Nodes are colored:
 	- green: `has_recent_modifications = true`
 	- red: `has_recent_modifications = false`
 - Node size uses logarithmic scaling from `total_edits`.
-- Click any neighbor node to re-center and fetch a new one-hop graph.
+- Click any node to re-center and fetch another one-hop neighborhood.
+- Drag the graph to pan, use the mouse wheel to zoom, and use **Reset View** if needed.
 
 ## Milestone 5 behavior
 

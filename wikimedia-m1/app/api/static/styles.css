@@ -137,7 +137,6 @@ input[type="number"] {
 }
 
 button {
-  grid-column: 1 / -1;
   border: none;
   border-radius: 10px;
   padding: 0.66rem 1rem;
@@ -150,6 +149,19 @@ button {
 
 button:hover {
   filter: brightness(1.06);
+}
+
+.button-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.button-ghost {
+  color: var(--ink);
+  background: rgba(106, 147, 206, 0.18);
+  border: 1px solid rgba(177, 207, 239, 0.3);
 }
 
 .content-grid {
@@ -190,6 +202,20 @@ button:hover {
   height: auto;
   min-height: 420px;
   margin-top: 0.5rem;
+  border-radius: 14px;
+  background: radial-gradient(circle at 20% 15%, rgba(140, 191, 246, 0.08) 0%, rgba(11, 23, 38, 0.18) 45%, rgba(11, 23, 38, 0.3) 100%);
+  touch-action: none;
+  cursor: grab;
+}
+
+#graphCanvas:active {
+  cursor: grabbing;
+}
+
+.graph-hint {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font: 500 0.78rem/1.2 "IBM Plex Mono", monospace;
 }
 
 .metrics {
@@ -288,9 +314,18 @@ button:hover {
   stroke-width: 1.6;
 }
 
+.grid-line {
+  stroke: rgba(147, 181, 220, 0.12);
+  stroke-width: 1;
+}
+
 @media (max-width: 900px) {
   .topbar,
   .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .button-row {
     grid-template-columns: 1fr;
   }
 

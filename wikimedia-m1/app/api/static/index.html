@@ -21,7 +21,7 @@
         <div class="title-group">
           <p class="eyebrow">Milestone 4</p>
           <h1>WikiMedia Real-Time Graph</h1>
-          <p class="subtitle">Explore one-hop page neighborhoods and re-center by clicking adjacent nodes.</p>
+          <p class="subtitle">Explore continuously: each click expands the same map, then drag and wheel-zoom to travel across discovered pages.</p>
         </div>
         <form id="controls" class="controls" autocomplete="off">
           <label class="field">
@@ -36,7 +36,11 @@
             <input id="refreshInput" name="refresh" type="checkbox" />
             <span>Force link refresh</span>
           </label>
-          <button type="submit">Load Graph</button>
+          <div class="button-row">
+            <button type="submit">Load Graph</button>
+            <button id="resetViewBtn" type="button" class="button-ghost">Reset View</button>
+            <button id="clearGraphBtn" type="button" class="button-ghost">Clear Explored Graph</button>
+          </div>
         </form>
       </header>
 
@@ -46,6 +50,7 @@
             <h2>Graph View</h2>
             <p id="graphStatus">Waiting for first query...</p>
           </div>
+          <p class="graph-hint">Mouse wheel to zoom, click-and-drag to pan, click any node to re-center and keep expanding.</p>
           <svg id="graphCanvas" viewBox="0 0 1000 700" aria-label="Graph canvas"></svg>
         </article>
 
