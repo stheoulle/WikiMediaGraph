@@ -5,6 +5,8 @@ const refreshInput = document.getElementById("refreshInput");
 const limitInput = document.getElementById("limitInput");
 const resetViewBtn = document.getElementById("resetViewBtn");
 const clearGraphBtn = document.getElementById("clearGraphBtn");
+const startLayoutBtn = document.getElementById("startLayoutBtn");
+const stopLayoutBtn = document.getElementById("stopLayoutBtn");
 const graphStatus = document.getElementById("graphStatus");
 const centerMetrics = document.getElementById("centerMetrics");
 const neighborList = document.getElementById("neighborList");
@@ -20,6 +22,11 @@ const MAX_PLACEMENT_ATTEMPTS = 64;
 const ZOOM_MIN = 0.35;
 const ZOOM_MAX = 2.6;
 const ZOOM_STEP = 1.12;
+const FA2_REPULSION = 6200;
+const FA2_SPRING = 0.012;
+const FA2_GRAVITY = 0.0026;
+const FA2_DAMPING = 0.86;
+const FA2_MAX_DISPLACEMENT = 20;
 
 const graphState = {
   nodes: new Map(),
@@ -35,6 +42,11 @@ const graphState = {
     pointerId: null,
     lastX: 0,
     lastY: 0,
+  },
+  layout: {
+    running: false,
+    rafId: null,
+    lastTickMs: 0,
   },
 };
 
@@ -90,6 +102,7 @@ function resetView() {
 }
 
 function clearExploredGraph() {
+  stopForceAtlasLayout();
   graphState.nodes.clear();
   graphState.edges.clear();
   graphState.currentCenterId = null;
@@ -348,6 +361,137 @@ function renderGraph() {
   canvas.appendChild(viewport);
 }
 
+function syncLayoutButtons() {
+  const running = graphState.layout.running;
+  startLayoutBtn.disabled = running;
+  stopLayoutBtn.disabled = !running;
+}
+
+function stopForceAtlasLayout() {
+  if (graphState.layout.rafId !== null) {
+    cancelAnimationFrame(graphState.layout.rafId);
+  }
+  graphState.layout.running = false;
+  graphState.layout.rafId = null;
+  graphState.layout.lastTickMs = 0;
+  syncLayoutButtons();
+}
+
+function runForceAtlasStep(dt) {
+  const nodes = Array.from(graphState.nodes.values());
+  if (nodes.length <= 1) {
+    return;
+  }
+
+  const accel = new Map();
+  nodes.forEach((node) => {
+    accel.set(node.page_id, { x: 0, y: 0 });
+  });
+
+  for (let i = 0; i < nodes.length; i += 1) {
+    const a = nodes[i];
+    for (let j = i + 1; j < nodes.length; j += 1) {
+      const b = nodes[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const distSq = dx * dx + dy * dy + 0.01;
+      const dist = Math.sqrt(distSq);
+      const force = FA2_REPULSION / distSq;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+
+      const aa = accel.get(a.page_id);
+      const bb = accel.get(b.page_id);
+      aa.x -= fx;
+      aa.y -= fy;
+      bb.x += fx;
+      bb.y += fy;
+    }
+  }
+
+  for (const edge of graphState.edges.values()) {
+    const source = graphState.nodes.get(edge.source_page_id);
+    const target = graphState.nodes.get(edge.target_page_id);
+    if (!source || !target) {
+      continue;
+    }
+
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
+    const dist = Math.max(Math.hypot(dx, dy), 0.01);
+    const desiredDist = 140;
+    const extension = dist - desiredDist;
+    const force = FA2_SPRING * extension;
+    const fx = (dx / dist) * force;
+    const fy = (dy / dist) * force;
+
+    const sa = accel.get(source.page_id);
+    const ta = accel.get(target.page_id);
+    sa.x += fx;
+    sa.y += fy;
+    ta.x -= fx;
+    ta.y -= fy;
+  }
+
+  nodes.forEach((node) => {
+    const a = accel.get(node.page_id);
+    a.x += (CENTER_X - node.x) * FA2_GRAVITY;
+    a.y += (CENTER_Y - node.y) * FA2_GRAVITY;
+
+    const prevVx = Number.isFinite(node.vx) ? node.vx : 0;
+    const prevVy = Number.isFinite(node.vy) ? node.vy : 0;
+    const nextVx = (prevVx + a.x * dt) * FA2_DAMPING;
+    const nextVy = (prevVy + a.y * dt) * FA2_DAMPING;
+    const maxStep = FA2_MAX_DISPLACEMENT * dt;
+    const stepLen = Math.hypot(nextVx, nextVy);
+
+    if (stepLen > maxStep && stepLen > 0) {
+      const ratio = maxStep / stepLen;
+      node.vx = nextVx * ratio;
+      node.vy = nextVy * ratio;
+    } else {
+      node.vx = nextVx;
+      node.vy = nextVy;
+    }
+
+    node.x += node.vx;
+    node.y += node.vy;
+  });
+}
+
+function forceAtlasTick(nowMs) {
+  if (!graphState.layout.running) {
+    return;
+  }
+
+  if (!graphState.layout.lastTickMs) {
+    graphState.layout.lastTickMs = nowMs;
+  }
+
+  const elapsedMs = nowMs - graphState.layout.lastTickMs;
+  graphState.layout.lastTickMs = nowMs;
+  const dt = Math.min(Math.max(elapsedMs / 16.67, 0.25), 2);
+
+  runForceAtlasStep(dt);
+  renderGraph();
+  graphState.layout.rafId = requestAnimationFrame(forceAtlasTick);
+}
+
+function startForceAtlasLayout() {
+  if (graphState.layout.running || graphState.nodes.size < 2) {
+    if (graphState.nodes.size < 2) {
+      graphStatus.textContent = "Need at least 2 nodes before starting ForceAtlas.";
+    }
+    return;
+  }
+
+  graphState.layout.running = true;
+  graphState.layout.lastTickMs = 0;
+  syncLayoutButtons();
+  graphStatus.textContent = "ForceAtlas layout running...";
+  graphState.layout.rafId = requestAnimationFrame(forceAtlasTick);
+}
+
 async function loadGraph(pageTitle, refresh) {
   const limit = Number.parseInt(limitInput.value, 10) || 25;
   const params = new URLSearchParams({
@@ -434,6 +578,15 @@ clearGraphBtn.addEventListener("click", () => {
   clearExploredGraph();
 });
 
+startLayoutBtn.addEventListener("click", () => {
+  startForceAtlasLayout();
+});
+
+stopLayoutBtn.addEventListener("click", () => {
+  stopForceAtlasLayout();
+  graphStatus.textContent = "ForceAtlas layout stopped.";
+});
+
 controls.addEventListener("submit", (event) => {
   event.preventDefault();
   const title = pageTitleInput.value.trim();
@@ -443,5 +596,7 @@ controls.addEventListener("submit", (event) => {
   }
   loadGraph(title, refreshInput.checked);
 });
+
+syncLayoutButtons();
 
 loadGraph(pageTitleInput.value.trim(), false);

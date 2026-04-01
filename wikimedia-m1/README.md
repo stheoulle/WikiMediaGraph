@@ -246,6 +246,8 @@ docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT sou
 - Node size uses logarithmic scaling from `total_edits`.
 - Click any node to re-center and fetch another one-hop neighborhood.
 - Drag the graph to pan, use the mouse wheel to zoom, and use **Reset View** if needed.
+- Use **Start ForceAtlas** to run a force-directed clustering pass over the explored graph.
+- Use **Stop Layout** to pause layout iterations and keep the current node positions.
 
 ## Milestone 5 behavior
 
