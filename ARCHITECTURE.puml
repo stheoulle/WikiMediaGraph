@@ -1,0 +1,250 @@
+@startuml WikiMediaGraph Architecture
+!include <C4/C4_Context>
+!define EXTERNAL_COLOR FFE6CC
+!define INGESTION_COLOR CCE5FF
+!define BROKER_COLOR D4E6F1
+!define PROCESSING_COLOR C8E6C9
+!define STORAGE_COLOR F8BBD0
+!define API_COLOR FFE0B2
+!define FRONTEND_COLOR B3E5FC
+!define RESOLUTION_COLOR E1BEE7
+
+rectangle "External Systems" #FFE6CC {
+    component "Wikimedia SSE\nRecentChange Stream" as SSE
+    component "Wikipedia API\nLink Resolver" as WIKI_API
+}
+
+rectangle "Ingestion Layer" #CCE5FF {
+    component "Producer\n(SSE Consumer)" as PRODUCER {
+        port "filters" as P_FILTER
+        port "publishes" as P_PUB
+    }
+}
+
+rectangle "Message Broker" #D4E6F1 {
+    database "Redpanda/Kafka\n(edits.raw topic)" as KAFKA
+}
+
+rectangle "Processing Layer" #C8E6C9 {
+    component "Consumer\n(Idempotent)" as CONSUMER {
+        port "consumes" as C_IN
+        port "writes" as C_OUT
+    }
+    
+    component "Recent-Activity Worker\n(1h Materialization)" as RECENT_WORKER {
+        port "reads" as RW_IN
+        port "updates" as RW_OUT
+    }
+}
+
+rectangle "Data Storage (PostgreSQL)" #F8BBD0 {
+    database "pages" as TABLE_PAGES {
+        node "id (PK)" as P_ID
+        node "title" as P_TITLE
+        node "namespace" as P_NS
+    }
+    
+    database "edit_events" as TABLE_EVENTS {
+        node "event_id (PK)" as E_ID
+        node "page_id (FK)" as E_PAGE
+        node "edit_timestamp" as E_TIME
+        node "user_id, comment..." as E_META
+    }
+    
+    database "page_stats" as TABLE_STATS {
+        node "page_id (FK, PK)" as S_PAGE
+        node "total_edits" as S_TOTAL
+        node "last_edit_time" as S_LAST
+    }
+    
+    database "page_recent_activity" as TABLE_RECENT {
+        node "page_id (FK, PK)" as RA_PAGE
+        node "edits_last_hour" as RA_COUNT
+        node "last_update" as RA_TIME
+    }
+    
+    database "page_links" as TABLE_LINKS {
+        node "source_page_id (FK)" as L_SRC
+        node "target_page_id (FK)" as L_TGT
+        node "relation_type" as L_TYPE
+        node "freshness_expires_at" as L_FRESH
+    }
+    
+    database "page_activity_buckets" as TABLE_BUCKETS {
+        node "page_id (FK)" as B_PAGE
+        node "bucket_start (TIMESTAMP)" as B_START
+        node "bucket_minutes" as B_MIN
+        node "edits_count" as B_EDITS
+        node "unique_users_count" as B_USERS
+    }
+}
+
+rectangle "API Layer (FastAPI)" #FFE0B2 {
+    component "REST API Server\n(Port 8000)" as API_SERVER {
+        component "Health Endpoint" as EP_HEALTH
+        component "Metrics Endpoint" as EP_METRICS
+        component "Observability\n(Unified Endpoint)" as EP_OBS
+        
+        component "Recent Pages\n(/api/recent/pages)" as EP_RECENT
+        
+        component "Graph Endpoint\n(/api/graph)" as EP_GRAPH {
+            port "fetches links" as EG_LINKS
+        }
+        component "Timeseries Endpoint\n(/api/pages/{title}/timeseries)" as EP_TS {
+            port "gap-fills buckets" as ETS_BUCKETS
+        }
+        
+        component "Link Refresh\n(POST /api/pages/{title}/links/refresh)" as EP_REFRESH {
+            port "refreshes" as ER_REFRESH
+        }
+    }
+}
+
+rectangle "Frontend Layer" #B3E5FC {
+    component "Static Assets Server" as STATIC_SERVER {
+        component "Graph Explorer\n(index.html)" as UI_GRAPH {
+            node "Canvas SVG" as UI_CANVAS
+            node "Nodes (color/size)" as UI_NODES
+            node "Edges" as UI_EDGES
+            node "Pan/Zoom Controls" as UI_CONTROLS
+        }
+        
+        component "Page Evolution Panel\n(index.html)" as UI_TIMESERIES {
+            node "Window Selector\n(1h/6h/24h/7d)" as TS_WINDOW
+            node "Bucket Selector\n(1m/5m/15m/60m)" as TS_BUCKET
+            node "Bar Chart (SVG)" as TS_CHART
+            node "EMA Trend Line\n(alpha=0.25)" as TS_EMA
+            node "Stats Display\n(sum, max, counts)" as TS_STATS
+        }
+        
+        component "App Logic\n(app.js)" as APP_JS {
+            node "Timeseries Rendering" as JS_TS
+            node "Auto-Bucket Selection" as JS_AUTO
+            node "EMA Calculation" as JS_EMA
+            node "Graph Layout/Interaction" as JS_GRAPH
+        }
+    }
+}
+
+rectangle "Link Resolution Layer" #E1BEE7 {
+    component "Link Resolver\n(link_resolver.py)" as LINK_RESOLVER {
+        port "queries" as LR_QUERY
+        port "caches/stores" as LR_CACHE
+    }
+    
+    component "TTL Cache\n(in-memory)" as CACHE
+}
+
+' External -> Ingestion
+SSE --> P_FILTER : "SSE Events\n(filtered to Wikipedia)"
+
+' Ingestion -> Broker
+P_PUB --> KAFKA : "Edit Events"
+
+' Broker -> Processing
+KAFKA --> C_IN : "Kafka Consume"
+C_OUT --> TABLE_EVENTS : "Insert/Check\nUnique event_id"
+C_OUT --> TABLE_STATS : "Increment\ntotal_edits"
+C_OUT --> TABLE_BUCKETS : "Upsert\n5m/15m/60m"
+
+' Recent Worker
+TABLE_EVENTS -.-> RW_IN : "Poll"
+RW_OUT --> TABLE_RECENT : "Update/Materialize"
+
+' API Layer -> Storage
+EP_HEALTH -.-> TABLE_STATS : "health check"
+EP_METRICS -.-> TABLE_EVENTS : "count events"
+EP_METRICS -.-> TABLE_STATS : "aggregate stats"
+EP_OBS -.-> TABLE_EVENTS : "lag/activity"
+EP_OBS -.-> TABLE_LINKS : "link freshness"
+
+EP_RECENT -.-> TABLE_RECENT : "query"
+
+EG_LINKS --> LINK_RESOLVER : "resolve missing links"
+LINK_RESOLVER --> CACHE : "check/store"
+LINK_RESOLVER --> WIKI_API : "fetch if stale"
+LINK_RESOLVER --> TABLE_LINKS : "persist"
+
+EP_GRAPH -.-> TABLE_STATS : "center metrics"
+EP_GRAPH -.-> TABLE_LINKS : "one-hop neighbors"
+
+ER_REFRESH --> LINK_RESOLVER : "force refresh"
+
+ETS_BUCKETS --> TABLE_BUCKETS : "query with\ngap-fill"
+
+' Frontend -> API
+UI_GRAPH --> EP_GRAPH : "HTTP GET"
+UI_GRAPH --> APP_JS : "Render canvas"
+
+UI_TIMESERIES --> EP_TS : "HTTP GET\n(window, bucket)"
+UI_TIMESERIES --> APP_JS : "Render chart"
+
+TS_WINDOW --> JS_AUTO : "Auto-select bucket"
+TS_BUCKET --> JS_TS : "Fetch timeseries"
+JS_TS --> TS_CHART : "Bar chart"
+JS_EMA --> TS_EMA : "Polyline"
+TS_STATS --> APP_JS : "Display\nobservations"
+
+' Link Refresh
+UI_GRAPH --> EP_REFRESH : "Manual refresh\n(user action)"
+
+' Frontend Display
+STATIC_SERVER --> UI_GRAPH : "serves"
+STATIC_SERVER --> UI_TIMESERIES : "serves"
+APP_JS --> UI_NODES : "positions"
+APP_JS --> UI_EDGES : "draws"
+APP_JS --> UI_CONTROLS : "event handlers"
+
+note right of TABLE_PAGES
+  **Unique Constraint**: 
+  title is functionally unique
+  (Wikipedia pages)
+end note
+
+note right of TABLE_EVENTS
+  **Idempotency Key**: 
+  event_id from Wikimedia SSE
+  ensures exactly-once counting
+end note
+
+note right of TABLE_BUCKETS
+  **Composite PK**:
+  (page_id, bucket_start, bucket_minutes)
+  Support for 5m, 15m, 60m resolutions
+  Via consumer upsert on every event
+end note
+
+note right of TABLE_LINKS
+  **Caching Model**:
+  freshness_expires_at controls
+  when Wikipedia API refresh needed
+  TTL-based lazy refresh
+end note
+
+note right of EP_GRAPH
+  **One-Hop Neighbors**:
+  Returns center page + linked pages
+  Color/size by activity metrics
+  Can trigger recursive exploration
+end note
+
+note right of UI_TIMESERIES
+  **Phase A Feature**:
+  Window selector + bucket selector
+  Gap-filled bar chart + EMA trend
+  Auto-bucket selection on window change
+end note
+
+legend right
+  | Color | Layer |
+  | <#FFE6CC> External Systems |
+  | <#CCE5FF> Ingestion |
+  | <#D4E6F1> Message Broker |
+  | <#C8E6C9> Processing |
+  | <#F8BBD0> Storage |
+  | <#FFE0B2> API |
+  | <#B3E5FC> Frontend |
+  | <#E1BEE7> Resolution/Cache |
+endlegend
+
+@enduml
