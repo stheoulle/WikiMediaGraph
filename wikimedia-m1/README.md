@@ -32,6 +32,13 @@ This folder now also implements Milestone 5:
 - Unified observability endpoint (`GET /api/observability`)
 - Throughput, lag proxy, dedup consistency, link freshness, and API latency metrics
 
+This folder now also implements Phase A from the improvement blueprint:
+
+- Bucketed page activity storage (`page_activity_buckets`)
+- Consumer-side bucket upserts for 5m/15m/60m windows
+- Page timeseries API (`GET /api/pages/{title}/timeseries`)
+- Frontend "Page Evolution" panel with window/bucket controls and bar chart
+
 ## Stack
 
 - Python 3.11
@@ -57,6 +64,7 @@ Default runtime mode in this repository:
 - sql/init.sql: database schema for Milestone 1
 - sql/migrations/002_page_recent_activity.sql: migration for Milestone 2 table
 - sql/migrations/003_page_links.sql: migration for Milestone 3 links table
+- sql/migrations/004_page_activity_buckets.sql: migration for Phase A timeseries buckets
 - app/producer/main.py: SSE -> Kafka producer
 - app/consumer/main.py: Kafka -> PostgreSQL idempotent consumer
 - app/recent_activity/main.py: rolling recomputation worker for last-hour activity
@@ -88,6 +96,7 @@ If your database volume already existed before Milestone 2, apply migration once
 ```bash
 docker exec -i wikimedia-postgres psql -U wikimedia -d wikimedia < sql/migrations/002_page_recent_activity.sql
 docker exec -i wikimedia-postgres psql -U wikimedia -d wikimedia < sql/migrations/003_page_links.sql
+docker exec -i wikimedia-postgres psql -U wikimedia -d wikimedia < sql/migrations/004_page_activity_buckets.sql
 ```
 
 3. Export environment for host mode:
@@ -156,6 +165,7 @@ curl -s http://localhost:8000/api/health
 curl -s http://localhost:8000/api/metrics
 curl -s http://localhost:8000/api/observability
 curl -s "http://localhost:8000/api/recent/pages?limit=10"
+curl -s "http://localhost:8000/api/pages/France/timeseries?window=24h&bucket=15"
 curl -s -X POST "http://localhost:8000/api/pages/France/links/refresh"
 curl -s "http://localhost:8000/api/graph?page_title=France&refresh=true&limit=25"
 ```
@@ -263,6 +273,17 @@ docker exec -it wikimedia-postgres psql -U wikimedia -d wikimedia -c "SELECT sou
 	- `total_links`, `stale_links`, `stale_link_ratio`
 	- `adjacency_query_latency_ms`
 - Includes API latency snapshots (`avg_ms`, `p50_ms`, `p95_ms`, `max_ms`) for key routes.
+
+## Phase A behavior
+
+- Consumer writes page activity buckets in `page_activity_buckets` for each accepted event.
+- Buckets are stored at 5-minute, 15-minute, and 60-minute resolutions.
+- `GET /api/pages/{title}/timeseries` returns a gap-filled bucket series for selected window and bucket size.
+- Frontend includes a **Page Evolution** panel with:
+	- window selector (`1h`, `6h`, `24h`, `7d`)
+	- bucket selector (`1m`, `5m`, `15m`, `60m`)
+	- manual refresh button
+	- bar chart + summary stats (`sum_edits`, `max_bucket`, `non_empty_buckets`, `total_buckets`)
 
 ## Optional: full Docker app mode
 

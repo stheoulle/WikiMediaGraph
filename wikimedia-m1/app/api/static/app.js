@@ -10,6 +10,19 @@ const stopLayoutBtn = document.getElementById("stopLayoutBtn");
 const graphStatus = document.getElementById("graphStatus");
 const centerMetrics = document.getElementById("centerMetrics");
 const neighborList = document.getElementById("neighborList");
+const timeseriesWindowInput = document.getElementById("timeseriesWindowInput");
+const timeseriesBucketInput = document.getElementById("timeseriesBucketInput");
+const refreshTimeseriesBtn = document.getElementById("refreshTimeseriesBtn");
+const timeseriesCanvas = document.getElementById("timeseriesCanvas");
+const timeseriesStatus = document.getElementById("timeseriesStatus");
+const timeseriesStats = document.getElementById("timeseriesStats");
+const EMA_ALPHA = 0.25;
+const WINDOW_BUCKET_SUGGESTIONS = {
+  "1h": "1",
+  "6h": "5",
+  "24h": "15",
+  "7d": "60",
+};
 
 const CANVAS_WIDTH = 1000;
 const CANVAS_HEIGHT = 700;
@@ -48,6 +61,7 @@ const graphState = {
     rafId: null,
     lastTickMs: 0,
   },
+  currentCenterTitle: null,
 };
 
 function fmtNumber(value) {
@@ -109,7 +123,171 @@ function clearExploredGraph() {
   resetView();
   centerMetrics.innerHTML = "";
   neighborList.innerHTML = "";
+  graphState.currentCenterTitle = null;
+  timeseriesStatus.textContent = "Graph cleared. Load a page to view timeseries.";
+  timeseriesStats.innerHTML = "";
+  renderEmptyTimeseries("No data");
   graphStatus.textContent = "Graph cleared. Load a page to start exploring.";
+}
+
+function setTimeseriesStats(stats) {
+  const rows = [
+    ["Total edits", fmtNumber(stats.sum_edits || 0)],
+    ["Peak bucket", fmtNumber(stats.max_bucket || 0)],
+    ["Active buckets", fmtNumber(stats.non_empty_buckets || 0)],
+    ["Total buckets", fmtNumber(stats.total_buckets || 0)],
+  ];
+
+  timeseriesStats.innerHTML = "";
+  rows.forEach(([label, value]) => {
+    const wrap = document.createElement("div");
+    const dt = document.createElement("dt");
+    const dd = document.createElement("dd");
+    dt.textContent = label;
+    dd.textContent = value;
+    wrap.appendChild(dt);
+    wrap.appendChild(dd);
+    timeseriesStats.appendChild(wrap);
+  });
+}
+
+function renderEmptyTimeseries(message) {
+  while (timeseriesCanvas.firstChild) {
+    timeseriesCanvas.removeChild(timeseriesCanvas.firstChild);
+  }
+
+  const text = makeSvg("text", {
+    x: 260,
+    y: 95,
+    class: "label",
+    "text-anchor": "middle",
+  });
+  text.textContent = message;
+  text.setAttribute("fill", "#9eb2cb");
+  timeseriesCanvas.appendChild(text);
+}
+
+function renderTimeseries(points) {
+  while (timeseriesCanvas.firstChild) {
+    timeseriesCanvas.removeChild(timeseriesCanvas.firstChild);
+  }
+
+  if (!points.length) {
+    renderEmptyTimeseries("No buckets in selected window");
+    return;
+  }
+
+  const width = 520;
+  const height = 180;
+  const padLeft = 34;
+  const padRight = 10;
+  const padTop = 10;
+  const padBottom = 20;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+  const maxEdits = Math.max(1, ...points.map((p) => p.edits));
+  const barW = Math.max(1, plotW / points.length);
+
+  const axis = makeSvg("line", {
+    x1: padLeft,
+    y1: height - padBottom,
+    x2: width - padRight,
+    y2: height - padBottom,
+    stroke: "rgba(147, 181, 220, 0.35)",
+    "stroke-width": 1,
+  });
+  timeseriesCanvas.appendChild(axis);
+
+  points.forEach((point, idx) => {
+    const h = (point.edits / maxEdits) * plotH;
+    const x = padLeft + idx * barW;
+    const y = padTop + (plotH - h);
+
+    const bar = makeSvg("rect", {
+      x,
+      y,
+      width: Math.max(1, barW - 1),
+      height: h,
+      fill: "rgba(42, 209, 141, 0.72)",
+    });
+    const tooltip = makeSvg("title");
+    tooltip.textContent = `t=${point.t} edits=${point.edits}`;
+    bar.appendChild(tooltip);
+    timeseriesCanvas.appendChild(bar);
+  });
+
+  const emaPoints = [];
+  let ema = points[0].edits;
+  points.forEach((point, idx) => {
+    ema = (EMA_ALPHA * point.edits) + ((1 - EMA_ALPHA) * ema);
+    const x = padLeft + (idx * barW) + (barW / 2);
+    const y = padTop + (plotH - ((ema / maxEdits) * plotH));
+    emaPoints.push(`${x},${y}`);
+  });
+
+  if (emaPoints.length >= 2) {
+    const trendLine = makeSvg("polyline", {
+      points: emaPoints.join(" "),
+      fill: "none",
+      stroke: "#ffd166",
+      "stroke-width": 2,
+      "stroke-linejoin": "round",
+      "stroke-linecap": "round",
+      opacity: 0.95,
+    });
+    const trendTip = makeSvg("title");
+    trendTip.textContent = `EMA trend alpha=${EMA_ALPHA}`;
+    trendLine.appendChild(trendTip);
+    timeseriesCanvas.appendChild(trendLine);
+  }
+
+  const peakLabel = makeSvg("text", {
+    x: padLeft,
+    y: padTop + 9,
+    class: "label",
+    "text-anchor": "start",
+  });
+  peakLabel.textContent = `max=${maxEdits}`;
+  peakLabel.setAttribute("fill", "#9eb2cb");
+  timeseriesCanvas.appendChild(peakLabel);
+}
+
+function applySuggestedBucket() {
+  const suggested = WINDOW_BUCKET_SUGGESTIONS[timeseriesWindowInput.value];
+  if (!suggested) {
+    return;
+  }
+  timeseriesBucketInput.value = suggested;
+}
+
+async function loadTimeseries(pageTitle) {
+  if (!pageTitle) {
+    return;
+  }
+
+  const params = new URLSearchParams({
+    window: timeseriesWindowInput.value,
+    bucket: timeseriesBucketInput.value,
+  });
+
+  timeseriesStatus.textContent = `Loading evolution for ${pageTitle}...`;
+
+  try {
+    const response = await fetch(`/api/pages/${encodeURIComponent(pageTitle)}/timeseries?${params.toString()}`);
+    if (!response.ok) {
+      const payload = await response.json();
+      throw new Error(payload.detail || `HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    renderTimeseries(payload.points || []);
+    setTimeseriesStats(payload.stats || {});
+    timeseriesStatus.textContent = `${payload.window} window with ${payload.bucket_minutes}m buckets.`;
+  } catch (error) {
+    timeseriesStatus.textContent = `Timeseries error: ${error.message}`;
+    timeseriesStats.innerHTML = "";
+    renderEmptyTimeseries("Unable to load timeseries");
+  }
 }
 
 function nodeRadius(node) {
@@ -513,6 +691,8 @@ async function loadGraph(pageTitle, refresh) {
     mergeGraphPayload(payload);
     renderGraph();
     updateMetrics(payload);
+    graphState.currentCenterTitle = payload.center.title;
+    await loadTimeseries(payload.center.title);
     graphStatus.textContent = `Centered on ${payload.center.title}. Showing ${graphState.nodes.size} explored nodes and ${graphState.edges.size} edges.`;
   } catch (error) {
     graphStatus.textContent = `Error: ${error.message}`;
@@ -587,6 +767,30 @@ stopLayoutBtn.addEventListener("click", () => {
   graphStatus.textContent = "ForceAtlas layout stopped.";
 });
 
+refreshTimeseriesBtn.addEventListener("click", () => {
+  const centerTitle = graphState.currentCenterTitle || pageTitleInput.value.trim();
+  if (!centerTitle) {
+    timeseriesStatus.textContent = "Load a page first.";
+    return;
+  }
+  loadTimeseries(centerTitle);
+});
+
+timeseriesWindowInput.addEventListener("change", () => {
+  applySuggestedBucket();
+  const centerTitle = graphState.currentCenterTitle;
+  if (centerTitle) {
+    loadTimeseries(centerTitle);
+  }
+});
+
+timeseriesBucketInput.addEventListener("change", () => {
+  const centerTitle = graphState.currentCenterTitle;
+  if (centerTitle) {
+    loadTimeseries(centerTitle);
+  }
+});
+
 controls.addEventListener("submit", (event) => {
   event.preventDefault();
   const title = pageTitleInput.value.trim();
@@ -598,5 +802,6 @@ controls.addEventListener("submit", (event) => {
 });
 
 syncLayoutButtons();
+renderEmptyTimeseries("Load a graph to view evolution");
 
 loadGraph(pageTitleInput.value.trim(), false);

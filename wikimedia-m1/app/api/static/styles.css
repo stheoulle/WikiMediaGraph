@@ -115,7 +115,8 @@ h1 {
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+select {
   width: 100%;
   border: 1px solid rgba(185, 214, 250, 0.25);
   border-radius: 10px;
@@ -123,6 +124,69 @@ input[type="number"] {
   color: var(--ink);
   background: rgba(7, 18, 30, 0.68);
   font-family: "Space Grotesk", sans-serif;
+}
+
+.timeseries-panel {
+  margin: 1rem 0;
+  border: 1px solid rgba(161, 188, 220, 0.22);
+  border-radius: 12px;
+  padding: 0.65rem;
+  background: rgba(7, 18, 30, 0.42);
+}
+
+.timeseries-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+#timeseriesStatus {
+  margin: 0;
+  color: var(--muted);
+  font: 500 0.74rem/1.25 "IBM Plex Mono", monospace;
+}
+
+.timeseries-controls {
+  margin-top: 0.5rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+#timeseriesCanvas {
+  width: 100%;
+  height: auto;
+  min-height: 180px;
+  margin-top: 0.55rem;
+  border-radius: 10px;
+  background: radial-gradient(circle at 20% 10%, rgba(42, 209, 141, 0.08) 0%, rgba(11, 23, 38, 0.22) 58%, rgba(11, 23, 38, 0.34) 100%);
+}
+
+.timeseries-stats {
+  margin: 0.55rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 0.65rem;
+}
+
+.timeseries-stats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.45rem;
+  border-bottom: 1px dashed rgba(200, 220, 245, 0.22);
+  padding-bottom: 0.2rem;
+}
+
+.timeseries-stats dt {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.timeseries-stats dd {
+  margin: 0;
+  text-align: right;
+  font-family: "IBM Plex Mono", monospace;
 }
 
 .toggle {

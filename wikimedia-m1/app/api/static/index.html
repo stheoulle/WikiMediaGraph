@@ -63,6 +63,37 @@
           <dl id="centerMetrics" class="metrics"></dl>
           <h3>Neighbors</h3>
           <ul id="neighborList" class="neighbor-list"></ul>
+
+          <section class="timeseries-panel">
+            <div class="timeseries-head">
+              <h3>Page Evolution</h3>
+              <p id="timeseriesStatus">Load a graph to view timeseries.</p>
+            </div>
+            <div class="timeseries-controls">
+              <label class="field compact">
+                <span>Window</span>
+                <select id="timeseriesWindowInput">
+                  <option value="1h">1h</option>
+                  <option value="6h">6h</option>
+                  <option value="24h" selected>24h</option>
+                  <option value="7d">7d</option>
+                </select>
+              </label>
+              <label class="field compact">
+                <span>Bucket</span>
+                <select id="timeseriesBucketInput">
+                  <option value="1">1m</option>
+                  <option value="5">5m</option>
+                  <option value="15" selected>15m</option>
+                  <option value="60">60m</option>
+                </select>
+              </label>
+              <button id="refreshTimeseriesBtn" type="button" class="button-ghost">Refresh</button>
+            </div>
+            <svg id="timeseriesCanvas" viewBox="0 0 520 180" aria-label="Page timeseries chart"></svg>
+            <dl id="timeseriesStats" class="timeseries-stats"></dl>
+          </section>
+
           <p class="legend-title">Legend</p>
           <div class="legend">
             <div><span class="swatch recent"></span> Recent activity (last hour)</div>

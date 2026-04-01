@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import psycopg
@@ -13,6 +13,14 @@ from app.common.db import db_connection
 from app.common.logging_utils import configure_logging
 
 logger = logging.getLogger("consumer")
+
+_BUCKET_MINUTES = (5, 15, 60)
+
+
+def _floor_to_bucket(ts: datetime, bucket_minutes: int) -> datetime:
+    ts_utc = ts.astimezone(timezone.utc)
+    floored_minute = (ts_utc.minute // bucket_minutes) * bucket_minutes
+    return ts_utc.replace(minute=floored_minute, second=0, microsecond=0)
 
 
 
@@ -79,6 +87,26 @@ def persist_event(conn: psycopg.Connection, event: dict[str, Any]) -> bool:
                 """,
                 (page_id, event["event_time"]),
             )
+
+            for bucket_minutes in _BUCKET_MINUTES:
+                bucket_start = _floor_to_bucket(event["event_time"], bucket_minutes)
+                cur.execute(
+                    """
+                    INSERT INTO page_activity_buckets (
+                        page_id,
+                        bucket_start,
+                        bucket_minutes,
+                        edits_count,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, 1, NOW())
+                    ON CONFLICT (page_id, bucket_start, bucket_minutes)
+                    DO UPDATE SET
+                        edits_count = page_activity_buckets.edits_count + 1,
+                        updated_at = NOW()
+                    """,
+                    (page_id, bucket_start, bucket_minutes),
+                )
 
     return True
 

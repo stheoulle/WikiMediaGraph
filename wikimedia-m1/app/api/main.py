@@ -25,6 +25,13 @@ _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _LATENCY_MAX_SAMPLES = 4000
 _REQUEST_LATENCIES_MS: dict[str, deque[float]] = defaultdict(lambda: deque(maxlen=_LATENCY_MAX_SAMPLES))
 _LATENCY_LOCK = Lock()
+_ALLOWED_WINDOWS: dict[str, timedelta] = {
+    "1h": timedelta(hours=1),
+    "6h": timedelta(hours=6),
+    "24h": timedelta(hours=24),
+    "7d": timedelta(days=7),
+}
+_ALLOWED_BUCKET_MINUTES = {1, 5, 15, 60}
 
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
@@ -57,6 +64,20 @@ def _latency_snapshot(path: str) -> dict[str, Any]:
         "p95_ms": round(_percentile(values, 95) or 0.0, 2),
         "max_ms": round(max(values), 2),
     }
+
+
+def _floor_to_bucket(ts: datetime, bucket_minutes: int) -> datetime:
+    ts_utc = ts.astimezone(timezone.utc)
+    floored_minute = (ts_utc.minute // bucket_minutes) * bucket_minutes
+    return ts_utc.replace(minute=floored_minute, second=0, microsecond=0)
+
+
+def _parse_window_param(window: str) -> timedelta:
+    parsed = _ALLOWED_WINDOWS.get(window)
+    if parsed is None:
+        allowed = ", ".join(_ALLOWED_WINDOWS.keys())
+        raise HTTPException(status_code=400, detail=f"Invalid window '{window}'. Allowed values: {allowed}.")
+    return parsed
 
 
 @app.middleware("http")
@@ -325,6 +346,82 @@ def page_activity(title: str) -> dict[str, Any]:
         "window_start": row[5].isoformat() if row[5] else None,
         "window_end": row[6].isoformat() if row[6] else None,
         "has_recent_modifications": row[2] > 0,
+    }
+
+
+@app.get("/api/pages/{title}/timeseries")
+def page_timeseries(
+    title: str,
+    window: str = Query(default="24h"),
+    bucket: int = Query(default=15, ge=1, le=60),
+) -> dict[str, Any]:
+    if bucket not in _ALLOWED_BUCKET_MINUTES:
+        allowed = ", ".join(str(v) for v in sorted(_ALLOWED_BUCKET_MINUTES))
+        raise HTTPException(status_code=400, detail=f"Invalid bucket '{bucket}'. Allowed minutes: {allowed}.")
+
+    window_delta = _parse_window_param(window)
+    now_utc = datetime.now(timezone.utc)
+    window_start_raw = now_utc - window_delta
+    window_start = _floor_to_bucket(window_start_raw, bucket)
+    window_end = _floor_to_bucket(now_utc, bucket)
+
+    with db_connection(settings.database_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, title FROM pages WHERE title = %s LIMIT 1", (title,))
+            page_row = cur.fetchone()
+
+            if page_row is None:
+                raise HTTPException(status_code=404, detail="Page not found")
+
+            page_id = page_row[0]
+
+            cur.execute(
+                """
+                SELECT bucket_start, edits_count
+                FROM page_activity_buckets
+                WHERE page_id = %s
+                  AND bucket_minutes = %s
+                  AND bucket_start >= %s
+                  AND bucket_start <= %s
+                ORDER BY bucket_start ASC
+                """,
+                (page_id, bucket, window_start, window_end),
+            )
+            rows = cur.fetchall()
+
+    edits_by_bucket = {row[0]: row[1] for row in rows}
+    points: list[dict[str, Any]] = []
+    total_buckets = 0
+    non_empty_buckets = 0
+    max_bucket = 0
+    sum_edits = 0
+
+    current = window_start
+    while current <= window_end:
+        edits = int(edits_by_bucket.get(current, 0))
+        points.append({"t": current.isoformat(), "edits": edits})
+        total_buckets += 1
+        sum_edits += edits
+        if edits > 0:
+            non_empty_buckets += 1
+        if edits > max_bucket:
+            max_bucket = edits
+        current += timedelta(minutes=bucket)
+
+    return {
+        "page_id": page_id,
+        "title": title,
+        "window": window,
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "bucket_minutes": bucket,
+        "points": points,
+        "stats": {
+            "sum_edits": sum_edits,
+            "max_bucket": max_bucket,
+            "non_empty_buckets": non_empty_buckets,
+            "total_buckets": total_buckets,
+        },
     }
 
 
